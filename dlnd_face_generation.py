@@ -153,20 +153,27 @@ def discriminator(images, reuse=False):
     """
     # TODO: Implement Function
     alpha = 0.2
+    dropout_rate = 0.8
     with tf.variable_scope('discriminator', reuse=reuse):
         #Input layer is 28*28*3
-        x1 = tf.layers.conv2d(images, 64, 5, strides=2, padding='same')
+        initializer1 = tf.contrib.layers.xavier_initializer()
+        x1 = tf.layers.conv2d(images, 64, 5, strides=2, padding='same', kernel_initializer=initializer1)
         relu1 = tf.maximum(alpha * x1, x1)
+        relu1=tf.identity(relu1,name="relu1")
         # 14 * 14 * 64
         
-        x2 = tf.layers.conv2d(relu1, 128, 5, strides=2, padding='same')
+        initializer2 = tf.contrib.layers.xavier_initializer()
+        x2 = tf.layers.conv2d(relu1, 128, 5, strides=2, padding='same', kernel_initializer=initializer2)
         bn2 = tf.layers.batch_normalization(x2, training=True)
         relu2 = tf.maximum(alpha * bn2, bn2)
+        relu2=tf.identity(relu2,name="relu2")
         # 7 * 7 * 128
         
         # Flatten it
         flat = tf.reshape(relu2, (-1, 7 * 7 * 128))
         logits = tf.layers.dense(flat, 1)
+        logits=tf.identity(logits,name="logits")
+        logits = tf.layers.dropout(logits, rate=dropout_rate, training=True)
         out =tf.sigmoid(logits)
         
 
@@ -204,11 +211,13 @@ def generator(z, out_channel_dim, is_train=True):
         x1 = tf.reshape(x1, (-1,7,7,128))
         x1 = tf.layers.batch_normalization(x1, training=is_train)
         x1 = tf.maximum(alpha * x1, x1)
+        x1=tf.identity(x1,name="x1")
         # 7 * 7 * 128
         
         x2 = tf.layers.conv2d_transpose(x1, 64, 5, strides=2, padding='same')
         x2 = tf.layers.batch_normalization(x2, training=is_train)
         x2 = tf.maximum(alpha * x2, x2)
+        x2=tf.identity(x2,name="x2")
         # 14 * 14 * 64
               
         # Output layer
@@ -216,6 +225,7 @@ def generator(z, out_channel_dim, is_train=True):
         # 28 * 28 * out_channel_dim
         
         out = tf.tanh(logits)
+        out=tf.identity(out,name="logits")
 
     return out
 
@@ -288,9 +298,11 @@ def model_opt(d_loss, g_loss, learning_rate, beta1):
     t_vars = tf.trainable_variables()
     g_vars = [var for var in t_vars if var.name.startswith('generator')]
     d_vars = [var for var in t_vars if var.name.startswith('discriminator')]
-    
-    d_train_opt = tf.train.AdamOptimizer(learning_rate).minimize(d_loss, var_list=d_vars)
-    g_train_opt = tf.train.AdamOptimizer(learning_rate).minimize(g_loss, var_list=g_vars)
+
+    with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+        d_train_opt = tf.train.AdamOptimizer(learning_rate, beta1=beta1).minimize(d_loss, var_list=d_vars, name="d_train_opt")
+        g_train_opt = tf.train.AdamOptimizer(learning_rate, beta1=beta1).minimize(g_loss, var_list=g_vars, name="g_train_opt")    
+
     
     return d_train_opt, g_train_opt
 
@@ -382,7 +394,7 @@ def train(epoch_count, batch_size, z_dim, learning_rate, beta1, get_batches, dat
                 # TODO: Train Model
                 # Sample random noise for G
                 batch_z = np.random.uniform(-1, 1, size=(batch_size, z_dim))
-                
+                batch_images = batch_images*2
                 # Run optimizers
                 _ = sess.run(d_train_opt, feed_dict={input_real:batch_images,
                                                      input_z:batch_z,
@@ -440,7 +452,7 @@ with tf.Graph().as_default():
 
 # In[13]:
 
-batch_size = 64
+batch_size = 32
 z_dim = 100
 learning_rate = 0.001
 beta1 = 0.5
